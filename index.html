@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>对不起</title>
+  <style>
+    /* ── 重置 ── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: #0d0d0d;
+      color: #fff;
+      font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+      overflow: hidden;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    /* ── 全屏舞台：点击翻页 ── */
+    .stage {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+    }
+
+    /* ── 卡片：绝对定位叠放，默认隐藏 ── */
+    .card {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 1.5rem;
+      padding: clamp(2rem, 10vw, 7rem) clamp(1.5rem, 8vw, 6rem);
+      text-align: center;
+
+      /* 初始状态：透明 + 轻微下移 */
+      opacity: 0;
+      transform: translateY(14px);
+      transition: opacity 400ms ease, transform 400ms ease;
+      pointer-events: none;
+    }
+
+    /* 当前激活的卡片 */
+    .card.active {
+      opacity: 1;
+      transform: translateY(0);
+      pointer-events: auto;
+    }
+
+    /* 离场动画：向上淡出 */
+    .card.exit {
+      opacity: 0;
+      transform: translateY(-14px);
+      transition: opacity 400ms ease, transform 400ms ease;
+    }
+
+    /* 主文字 */
+    .card-text {
+      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-weight: 300;
+      line-height: 1.5;
+      letter-spacing: 0.03em;
+    }
+
+    /* 副文字（署名等） */
+    .card-sub {
+      font-size: clamp(0.85rem, 1.8vw, 1.15rem);
+      color: rgba(255, 255, 255, 0.38);
+      font-weight: 300;
+      letter-spacing: 0.08em;
+      margin-top: 0.25rem;
+    }
+
+    /* ── 右侧翻页箭头 ── */
+    .arrow {
+      position: fixed;
+      right: clamp(1.25rem, 4vw, 3rem);
+      top: 50%;
+      transform: translateY(-50%);
+      width: 48px;
+      height: 48px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0.22;
+      transition: opacity 200ms ease;
+      z-index: 20;
+      /* 扩大触摸热区 */
+      padding: 8px;
+    }
+
+    .arrow:hover  { opacity: 0.65; }
+    .arrow:active { opacity: 1; }
+
+    .arrow svg {
+      width: 26px;
+      height: 26px;
+      stroke: #fff;
+      fill: none;
+      stroke-width: 1.6;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    /* 最后一张时隐藏箭头 */
+    .arrow.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    /* ── 底部进度区 ── */
+    .footer {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: clamp(1.5rem, 4vw, 2.5rem) clamp(1.5rem, 6vw, 4rem);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.6rem;
+      z-index: 20;
+      pointer-events: none;
+    }
+
+    /* 细线进度条 */
+    .progress-bar {
+      width: min(300px, 55vw);
+      height: 1px;
+      background: rgba(255, 255, 255, 0.1);
+      border-radius: 1px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      background: rgba(255, 255, 255, 0.45);
+      border-radius: 1px;
+      transition: width 400ms ease;
+    }
+
+    /* 进度数字 */
+    .progress-text {
+      font-size: 0.7rem;
+      color: rgba(255, 255, 255, 0.25);
+      letter-spacing: 0.15em;
+    }
+  </style>
+</head>
+<body>
+
+<!-- 全屏舞台（点击 = 下一张） -->
+<div class="stage" id="stage"></div>
+
+<!-- 右侧翻页箭头 -->
+<div class="arrow" id="arrow" role="button" aria-label="下一张">
+  <svg viewBox="0 0 24 24" aria-hidden="true">
+    <polyline points="9 18 15 12 9 6"></polyline>
+  </svg>
+</div>
+
+<!-- 底部进度 -->
+<div class="footer">
+  <div class="progress-bar">
+    <div class="progress-fill" id="progressFill"></div>
+  </div>
+  <div class="progress-text" id="progressText"></div>
+</div>
+
+<script>
+  /* =====================================================================
+   * ★ 修改区域 ★  —— 只需改这里，上下不用动
+   *
+   *   text  主文字
+   *   sub   副文字（空字符串则不显示）
+   * ===================================================================== */
+  const slides = [
+    { text: "【第一句话】", sub: "" },
+    { text: "【第二句话】", sub: "" },
+    { text: "【第三句话】", sub: "" },
+    { text: "【第四句话】", sub: "" },
+    { text: "【第五句话】", sub: "" },
+    { text: "对不起。",     sub: "——来自某个很在乎你的人" },
+  ];
+
+  /* 后端地址：部署后替换成真实 URL，末尾不加斜杠 */
+  const API_BASE = "http://localhost:8000";
+
+  /* =====================================================================
+   * 以下为功能逻辑，通常无需修改
+   * ===================================================================== */
+
+  let current   = 0;     // 当前卡片索引
+  let animating = false; // 动画锁，防止连续点击错位
+
+  const stage        = document.getElementById("stage");
+  const arrow        = document.getElementById("arrow");
+  const progressFill = document.getElementById("progressFill");
+  const progressText = document.getElementById("progressText");
+
+  /* —— 建卡片 DOM —— */
+  slides.forEach((slide, i) => {
+    const card = document.createElement("div");
+    card.className = "card" + (i === 0 ? " active" : "");
+    card.dataset.index = String(i);
+
+    const textEl = document.createElement("p");
+    textEl.className = "card-text";
+    textEl.textContent = slide.text;
+    card.appendChild(textEl);
+
+    if (slide.sub) {
+      const subEl = document.createElement("p");
+      subEl.className = "card-sub";
+      subEl.textContent = slide.sub;
+      card.appendChild(subEl);
+    }
+
+    stage.appendChild(card);
+  });
+
+  const cards = Array.from(stage.querySelectorAll(".card"));
+
+  /* —— 更新进度条 + 箭头可见性 —— */
+  function updateProgress() {
+    const total = slides.length;
+    const num   = current + 1;
+    progressText.textContent = num + " / " + total;
+    progressFill.style.width = (num / total * 100) + "%";
+    arrow.classList.toggle("hidden", current === total - 1);
+  }
+
+  /* —— 跳转到指定索引（前进/后退通用） —— */
+  function goTo(index) {
+    if (animating || index === current) return;
+    if (index < 0 || index >= slides.length) return;
+
+    animating = true;
+    const prev      = current;
+    const isForward = index > prev;
+    current = index;
+
+    /* 旧卡片离场 */
+    cards[prev].classList.add("exit");
+    cards[prev].classList.remove("active");
+
+    /* 新卡片入场方向：前进从下方进入，后退从上方进入 */
+    const enterY = isForward ? "14px" : "-14px";
+    cards[current].style.cssText = `opacity:0; transform:translateY(${enterY}); transition:none;`;
+
+    /* 强制重排后开启 transition */
+    cards[current].offsetHeight; // 触发 reflow
+    cards[current].style.cssText = "";
+    cards[current].classList.add("active");
+
+    updateProgress();
+
+    /* 动画结束后解锁，清理离场类 */
+    setTimeout(() => {
+      cards[prev].classList.remove("exit");
+      animating = false;
+    }, 440);
+  }
+
+  /* —— 点击舞台 → 前进 —— */
+  stage.addEventListener("click", () => goTo(current + 1));
+
+  /* —— 点击箭头 → 前进（阻止冒泡避免触发两次） —— */
+  arrow.addEventListener("click", (e) => {
+    e.stopPropagation();
+    goTo(current + 1);
+  });
+
+  /* —— 键盘方向键 —— */
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") goTo(current + 1);
+    if (e.key === "ArrowLeft"  || e.key === "ArrowUp")   goTo(current - 1);
+  });
+
+  /* —— 触摸滑动（移动端） —— */
+  let touchStartX = 0;
+  let touchStartY = 0;
+  document.addEventListener("touchstart", (e) => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, { passive: true });
+  document.addEventListener("touchend", (e) => {
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    const dy = e.changedTouches[0].clientY - touchStartY;
+    /* 水平滑动幅度 > 竖直幅度才触发翻页，避免误操作 */
+    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
+      if (dx < 0) goTo(current + 1); // 左滑 → 下一张
+      else         goTo(current - 1); // 右滑 → 上一张
+    }
+  }, { passive: true });
+
+  /* —— 页面加载时记录一次访问（fire and forget，失败静默） —— */
+  fetch(API_BASE + "/api/visit", { method: "POST" }).catch(() => {});
+
+  /* —— 初始化进度显示 —— */
+  updateProgress();
+</script>
+</body>
+</html>
