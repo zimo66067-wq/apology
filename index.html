@@ -175,8 +175,21 @@
    * 以下为逻辑代码，通常无需修改
    * ===================================================== */
 
-  let current   = 0;     // 当前卡片索引
-  let animating = false; // 动画锁，防止连续操作错位
+  let current    = 0;              // 当前卡片索引
+  let animating  = false;          // 动画锁，防止连续操作错位
+  let visitId    = null;           // 后端返回的本次访问 UUID
+  const viewedPages = new Set([0]); // 已看过的页码集合（0-indexed）
+
+  /* —— 同步已读页码到后端 —— */
+  function syncPages() {
+    if (!visitId) return;
+    fetch(API_BASE + "/api/visit/" + visitId, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pages_viewed: Array.from(viewedPages) }),
+      keepalive: true,   // 页面关闭时也能完成请求
+    }).catch(() => {});
+  }
 
   const cardWrap = document.getElementById("cardWrap");
   const dotsEl   = document.getElementById("dots");
@@ -225,6 +238,9 @@
     const prev      = current;
     const isForward = index > prev;
     current = index;
+
+    viewedPages.add(index); // 记录新页已读
+    syncPages();            // 立即上报
 
     /* 旧卡片离场（方向感） */
     cards[prev].classList.remove("active");
@@ -276,8 +292,20 @@
     }
   }, { passive: true });
 
-  /* —— 页面加载记录一次访问（fire and forget，失败静默） —— */
-  fetch(API_BASE + "/api/visit", { method: "POST" }).catch(() => {});
+  /* —— 切到后台时再同步一次（双保险） —— */
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden") syncPages();
+  });
+
+  /* —— 页面加载：记录访问，获取 visit_id —— */
+  fetch(API_BASE + "/api/visit", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ user_agent: navigator.userAgent }),
+  })
+  .then(r => r.json())
+  .then(d => { visitId = d.visit_id; })
+  .catch(() => {});
 </script>
 </body>
 </html>

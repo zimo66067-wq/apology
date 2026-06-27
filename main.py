@@ -1,43 +1,49 @@
 """
-======================================================
-apology-backend — 网页访问计数服务
-======================================================
+apology-backend — 网页访问追踪服务
 
-接口说明：
-  POST  /api/visit   访问计数 +1，记录 IP 和时间戳，返回当前总数
-  GET   /api/count   查询当前总访问次数
-  GET   /api/health  健康检查
+接口：
+  POST   /api/visit                 记录一次访问（含设备信息），返回 count + visit_id
+  PATCH  /api/visit/{visit_id}      更新本次访问的已读页码
+  GET    /api/count                 查询总访问次数
+  GET    /api/health                健康检查
+  GET    /api/admin?key=xxx         管理后台（HTML 页面，需要密钥）
+  GET    /                          前端页面 index.html
 
-启动方式：
-  uvicorn main:app --reload --port 8000
-
-环境变量（见 .env.example）：
+环境变量（在 Render 的 Environment 里设置）：
   DATABASE_URL   SQLite 连接串，默认 sqlite:///./visits.db
-======================================================
+  ADMIN_KEY      管理后台密钥，默认 xinyu2025（建议改掉）
 """
 
+import json
+import os
+import re
+import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timedelta
+from typing import List, Optional
 
-from fastapi import Depends, FastAPI, Request
+from fastapi import Body, Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse, HTMLResponse
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import Visit, get_db, init_db
 
+# 与前端 slides 数组长度保持一致，影响管理后台的页码格子数量
+TOTAL_SLIDES = 16
 
-# ── 生命周期：启动时建表 ──────────────────────────────
+ADMIN_KEY = os.getenv("ADMIN_KEY", "xinyu2025")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
     yield
 
 
-app = FastAPI(title="访问计数服务", lifespan=lifespan)
+app = FastAPI(title="访问追踪服务", lifespan=lifespan)
 
-# ── CORS：允许所有来源（部署后可按需收窄） ──────────────
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -46,7 +52,38 @@ app.add_middleware(
 )
 
 
-# ── 响应模型 ─────────────────────────────────────────
+# ── 工具函数 ──────────────────────────────────────────
+
+def detect_device(ua: str) -> str:
+    """从 User-Agent 粗略判断设备类型"""
+    if re.search(r"iPad|Tablet", ua, re.I):
+        return "tablet"
+    if re.search(r"Mobile|Android|iPhone|iPod|Windows Phone", ua, re.I):
+        return "mobile"
+    return "desktop"
+
+
+def get_ip(request: Request) -> str:
+    fwd = request.headers.get("X-Forwarded-For")
+    return fwd.split(",")[0].strip() if fwd else (request.client.host or "")
+
+
+# ── 请求 / 响应模型 ───────────────────────────────────
+
+class VisitCreate(BaseModel):
+    user_agent:   Optional[str]       = None
+    pages_viewed: Optional[List[int]] = None
+
+
+class PagesUpdate(BaseModel):
+    pages_viewed: List[int]
+
+
+class VisitResponse(BaseModel):
+    count:    int
+    visit_id: str
+
+
 class CountResponse(BaseModel):
     count: int
 
@@ -55,40 +92,136 @@ class HealthResponse(BaseModel):
     status: str
 
 
-# ── 接口实现 ─────────────────────────────────────────
+# ── 接口 ──────────────────────────────────────────────
 
-@app.post("/api/visit", response_model=CountResponse, summary="记录一次访问")
-def record_visit(request: Request, db: Session = Depends(get_db)):
-    """
-    每次调用：
-    1. 向 visits 表写入一条记录（含来源 IP、时间戳）
-    2. 返回当前总访问次数
-    """
-    # 获取来源 IP（反向代理时读 X-Forwarded-For）
-    forwarded_for = request.headers.get("X-Forwarded-For")
-    ip = forwarded_for.split(",")[0].strip() if forwarded_for else request.client.host
-
-    db.add(Visit(ip=ip))
+@app.post("/api/visit", response_model=VisitResponse, summary="记录一次访问")
+def record_visit(
+    request: Request,
+    body: VisitCreate = Body(default_factory=VisitCreate),
+    db: Session = Depends(get_db),
+):
+    ua     = body.user_agent or request.headers.get("user-agent", "")
+    pages  = sorted(set(body.pages_viewed or [0]))
+    visit  = Visit(
+        visit_id    = str(uuid.uuid4()),
+        ip          = get_ip(request),
+        user_agent  = ua,
+        device_type = detect_device(ua),
+        pages_viewed = json.dumps(pages),
+        max_page    = max(pages),
+    )
+    db.add(visit)
     db.commit()
-
     count = db.query(Visit).count()
-    return {"count": count}
+    return {"count": count, "visit_id": visit.visit_id}
+
+
+@app.patch("/api/visit/{visit_id}", summary="更新已读页码")
+def update_pages(
+    visit_id: str,
+    body: PagesUpdate,
+    db: Session = Depends(get_db),
+):
+    v = db.query(Visit).filter(Visit.visit_id == visit_id).first()
+    if not v:
+        raise HTTPException(status_code=404, detail="visit not found")
+    pages = sorted(set(body.pages_viewed))
+    v.pages_viewed = json.dumps(pages)
+    v.max_page     = max(pages) if pages else 0
+    db.commit()
+    return {"ok": True}
 
 
 @app.get("/api/count", response_model=CountResponse, summary="查询总访问次数")
 def get_count(db: Session = Depends(get_db)):
-    """返回 visits 表的总行数，即历史总访问次数。"""
-    count = db.query(Visit).count()
-    return {"count": count}
+    return {"count": db.query(Visit).count()}
 
 
 @app.get("/api/health", response_model=HealthResponse, summary="健康检查")
 def health():
-    """服务存活探针，始终返回 {"status": "ok"}。"""
     return {"status": "ok"}
 
 
-# ── 根路径直接返回 index.html（放在所有 API 路由之后） ──
+@app.get("/api/admin", response_class=HTMLResponse, summary="管理后台", include_in_schema=False)
+def admin_panel(key: str = "", db: Session = Depends(get_db)):
+    if key != ADMIN_KEY:
+        return HTMLResponse(
+            "<html><body style='font-family:sans-serif;padding:2rem'>"
+            "<h3>密钥错误</h3><p>在 URL 后加 <code>?key=你的密钥</code></p>"
+            "</body></html>",
+            status_code=403,
+        )
+
+    visits = db.query(Visit).order_by(Visit.created_at.desc()).all()
+
+    device_icon = {"mobile": "📱", "tablet": "📟", "desktop": "💻"}
+
+    rows = ""
+    for v in visits:
+        pages    = set(json.loads(v.pages_viewed or "[]"))
+        cst      = v.created_at + timedelta(hours=8)
+        time_str = cst.strftime("%m-%d %H:%M")
+        icon     = device_icon.get(v.device_type or "desktop", "💻")
+        chips    = "".join(
+            f'<span class="chip on">{i+1}</span>' if i in pages
+            else f'<span class="chip">{i+1}</span>'
+            for i in range(TOTAL_SLIDES)
+        )
+        rows += f"""<tr>
+          <td>{icon} {v.device_type or "-"}</td>
+          <td class="muted">{v.ip or "-"}</td>
+          <td>{time_str}</td>
+          <td class="center">{v.max_page + 1}&thinsp;/&thinsp;{TOTAL_SLIDES}</td>
+          <td class="chips">{chips}</td>
+        </tr>"""
+
+    html = f"""<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1"/>
+  <title>访客记录</title>
+  <style>
+    *{{box-sizing:border-box;margin:0;padding:0}}
+    body{{font-family:-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;
+         background:#f7f4ef;color:#333;padding:1.5rem;font-size:.9rem}}
+    h2{{font-size:1rem;font-weight:500;color:#888;margin-bottom:1.2rem}}
+    table{{width:100%;border-collapse:collapse;background:#fff;
+           border-radius:10px;overflow:hidden;
+           box-shadow:0 1px 12px rgba(0,0,0,.06)}}
+    thead th{{background:#f0ece4;padding:.6rem 1rem;text-align:left;
+              font-size:.75rem;color:#999;font-weight:500;white-space:nowrap}}
+    tbody td{{padding:.65rem 1rem;border-top:1px solid #f2ede7;vertical-align:middle}}
+    .muted{{color:#ccc;font-size:.75rem;font-family:monospace}}
+    .center{{text-align:center;white-space:nowrap}}
+    .chips{{white-space:normal;line-height:1.9}}
+    .chip{{display:inline-block;width:20px;height:20px;line-height:20px;
+           text-align:center;border-radius:4px;font-size:.62rem;
+           background:#eee;color:#ccc;margin:1px}}
+    .chip.on{{background:#c4a882;color:#fff;font-weight:600}}
+    @media(max-width:600px){{
+      body{{padding:1rem .75rem}}
+      td,th{{padding:.5rem .6rem}}
+      .chip{{width:17px;height:17px;line-height:17px;font-size:.58rem}}
+    }}
+  </style>
+</head>
+<body>
+  <h2>访客记录 &middot; 共 {len(visits)} 次访问</h2>
+  <table>
+    <thead>
+      <tr><th>设备</th><th>IP</th><th>时间（北京）</th><th>最远页</th><th>已看页码</th></tr>
+    </thead>
+    <tbody>
+      {rows or '<tr><td colspan="5" style="text-align:center;color:#ccc;padding:2.5rem">暂无记录</td></tr>'}
+    </tbody>
+  </table>
+</body>
+</html>"""
+    return HTMLResponse(html)
+
+
+# ── 根路径提供前端页面 ────────────────────────────────
 @app.get("/", include_in_schema=False)
 def serve_index():
     return FileResponse("index.html")
