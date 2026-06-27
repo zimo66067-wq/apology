@@ -63,39 +63,89 @@ def detect_device(ua: str) -> str:
     return "desktop"
 
 
+# 品牌规则：(UA 中的识别关键词, 显示品牌名, 型号字符串中要去掉的前缀)
+_BRAND_RULES = [
+    (["HUAWEI"],               "华为",    ["HUAWEI ", "Huawei "]),
+    (["HONOR"],                "荣耀",    ["HONOR ", "Honor "]),
+    (["XIAOMI", "REDMI", "POCO"], "小米", ["Xiaomi ", "xiaomi ", "Redmi ", "redmi ", "POCO "]),
+    (["OPPO"],                 "OPPO",   ["OPPO "]),
+    (["VIVO"],                 "vivo",   ["vivo ", "VIVO "]),
+    (["REALME"],               "Realme", ["realme ", "Realme ", "REALME "]),
+    (["ONEPLUS"],              "一加",   ["OnePlus ", "ONEPLUS "]),
+    (["SAMSUNG", "; SM-"],     "三星",   ["Samsung ", "SAMSUNG "]),
+    (["MEIZU"],                "魅族",   ["Meizu ", "MEIZU "]),
+    (["NOKIA"],                "诺基亚", ["Nokia ", "NOKIA "]),
+    (["SONY"],                 "索尼",   ["Sony ", "SONY "]),
+    (["PIXEL", "NEXUS"],       "Google", ["Pixel ", "pixel ", "Nexus "]),
+    (["MOTOROLA", "MOTO "],    "摩托罗拉", ["Motorola ", "moto ", "Moto "]),
+    (["LENOVO"],               "联想",   ["Lenovo ", "LENOVO "]),
+    (["ASUS"],                 "华硕",   ["ASUS ", "Asus "]),
+]
+
+
+def _match_brand(text: str):
+    """返回 (品牌显示名, 型号前缀列表) 或 (None, [])"""
+    t = text.upper()
+    for keywords, brand, prefixes in _BRAND_RULES:
+        if any(kw.upper() in t for kw in keywords):
+            return brand, prefixes
+    return None, []
+
+
+def _strip_prefix(model: str, prefixes: list) -> str:
+    """去掉型号字符串开头的品牌前缀，让显示更简洁"""
+    for p in prefixes:
+        if model.lower().startswith(p.lower()):
+            return model[len(p):].strip()
+    return model
+
+
 def parse_device_info(ua: str) -> str:
     """从 User-Agent 提取可读的设备型号 / 系统信息"""
     if not ua:
         return "Unknown"
+
     # iPhone
     m = re.search(r"iPhone OS ([\d_]+)", ua)
     if m:
         return f"iPhone · iOS {m.group(1).replace('_', '.')}"
+
     # iPad
     m = re.search(r"iPad.*?OS ([\d_]+)", ua)
     if m:
         return f"iPad · iOS {m.group(1).replace('_', '.')}"
-    # Android — 型号在 "Android X.X; 型号 Build" 或 "Android X.X; 型号)" 之间
+
+    # Android — 提取版本号和型号
     m = re.search(r"Android ([\d.]+);\s*([^;)]+?)(?:\s+Build|[;)])", ua)
     if m:
-        model = m.group(2).strip()
-        return f"Android {m.group(1)} · {model}" if model else f"Android {m.group(1)}"
+        android_ver = m.group(1)
+        raw_model   = m.group(2).strip()
+        brand, prefixes = _match_brand(ua + " " + raw_model)
+        if brand:
+            clean_model = _strip_prefix(raw_model, prefixes)
+            return f"{brand} · {clean_model}" if clean_model else brand
+        return f"Android {android_ver} · {raw_model}" if raw_model else f"Android {android_ver}"
+
     if re.search(r"Android", ua, re.I):
         m = re.search(r"Android ([\d.]+)", ua)
         return f"Android {m.group(1)}" if m else "Android"
+
     # Windows 桌面
     if re.search(r"Windows", ua):
-        browser = ("Edge"    if re.search(r"Edg/",    ua) else
+        browser = ("Edge"    if re.search(r"Edg/", ua) else
                    "Chrome"  if "Chrome"  in ua else
                    "Firefox" if "Firefox" in ua else "Browser")
         return f"Windows · {browser}"
+
     # Mac 桌面
     if re.search(r"Macintosh", ua):
         browser = ("Chrome" if "Chrome" in ua else
                    "Safari" if "Safari" in ua else "Browser")
         return f"Mac · {browser}"
+
     if re.search(r"Linux", ua):
         return "Linux · Browser"
+
     return "Unknown"
 
 
