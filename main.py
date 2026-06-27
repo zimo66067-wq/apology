@@ -20,6 +20,8 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -84,3 +86,9 @@ def get_count(db: Session = Depends(get_db)):
 def health():
     """服务存活探针，始终返回 {"status": "ok"}。"""
     return {"status": "ok"}
+
+
+# ── 根路径直接返回 index.html（放在所有 API 路由之后） ──
+@app.get("/", include_in_schema=False)
+def serve_index():
+    return FileResponse("index.html")
