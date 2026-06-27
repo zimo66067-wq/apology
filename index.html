@@ -4,214 +4,176 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>对不起</title>
+  <!-- Noto Serif SC 衬线字体 -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@300;400&display=swap" rel="stylesheet" />
   <style>
     /* ── 重置 ── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     html, body {
       height: 100%;
-      background: #0d0d0d;
-      color: #fff;
-      font-family: 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC', sans-serif;
+      background: #F5F0E8;           /* 米黄底色 */
+      font-family: 'Noto Serif SC', 'STSong', 'SimSun', serif;
       overflow: hidden;
       user-select: none;
       -webkit-user-select: none;
     }
 
-    /* ── 全屏舞台：点击翻页 ── */
-    .stage {
+    /* 纸张噪点纹理：SVG feTurbulence 叠加层，opacity 0.04 */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+      opacity: 0.04;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23n)'/%3E%3C/svg%3E");
+      background-size: 200px 200px;
+    }
+
+    /* ── 全屏舞台 ── */
+    .scene {
       position: relative;
       width: 100%;
       height: 100%;
       display: flex;
+      flex-direction: column;
       align-items: center;
       justify-content: center;
+      gap: 2rem;
+      z-index: 1;
+    }
+
+    /* ── 卡片容器：固定尺寸，卡片在内部叠放 ── */
+    .card-wrap {
+      position: relative;
+      width: min(600px, 90vw);
+      height: clamp(240px, 55vh, 440px);
       cursor: pointer;
     }
 
-    /* ── 卡片：绝对定位叠放，默认隐藏 ── */
+    /* ── 单张纸片 ── */
     .card {
       position: absolute;
       inset: 0;
+      background: #FDFAF4;                              /* 奶白纸面 */
+      border-radius: 4px;
+      box-shadow: 0 2px 24px rgba(0, 0, 0, 0.08);
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
-      gap: 1.5rem;
-      padding: clamp(2rem, 10vw, 7rem) clamp(1.5rem, 8vw, 6rem);
+      gap: 1.2rem;
+      padding: clamp(1.8rem, 8%, 3.5rem);
       text-align: center;
 
-      /* 初始状态：透明 + 轻微下移 */
+      /* 默认隐藏：透明 + 轻微下移 */
       opacity: 0;
-      transform: translateY(14px);
-      transition: opacity 400ms ease, transform 400ms ease;
+      transform: translateY(12px);
+      transition: opacity 450ms ease-out, transform 450ms ease-out;
       pointer-events: none;
     }
 
-    /* 当前激活的卡片 */
+    /* 当前激活卡片 */
     .card.active {
       opacity: 1;
       transform: translateY(0);
       pointer-events: auto;
     }
 
-    /* 离场动画：向上淡出 */
-    .card.exit {
+    /* 向上离场（前进时旧卡片） */
+    .card.exit-up {
       opacity: 0;
-      transform: translateY(-14px);
-      transition: opacity 400ms ease, transform 400ms ease;
+      transform: translateY(-12px);
+      transition: opacity 450ms ease-out, transform 450ms ease-out;
+    }
+
+    /* 向下离场（后退时旧卡片） */
+    .card.exit-down {
+      opacity: 0;
+      transform: translateY(12px);
+      transition: opacity 450ms ease-out, transform 450ms ease-out;
     }
 
     /* 主文字 */
     .card-text {
-      font-size: clamp(2rem, 5vw, 3.5rem);
+      font-size: clamp(1.5rem, 4.5vw, 2.6rem);
       font-weight: 300;
-      line-height: 1.5;
-      letter-spacing: 0.03em;
+      color: #2C2416;                  /* 深棕 */
+      line-height: 1.65;
+      letter-spacing: 0.06em;
     }
 
-    /* 副文字（署名等） */
+    /* 副文字 / 署名 */
     .card-sub {
-      font-size: clamp(0.85rem, 1.8vw, 1.15rem);
-      color: rgba(255, 255, 255, 0.38);
+      font-size: clamp(0.8rem, 1.8vw, 1rem);
       font-weight: 300;
-      letter-spacing: 0.08em;
-      margin-top: 0.25rem;
+      color: #8C7B5E;                  /* 中棕 */
+      letter-spacing: 0.1em;
+      margin-top: 0.3rem;
     }
 
-    /* ── 右侧翻页箭头 ── */
-    .arrow {
-      position: fixed;
-      right: clamp(1.25rem, 4vw, 3rem);
-      top: 50%;
-      transform: translateY(-50%);
-      width: 48px;
-      height: 48px;
+    /* ── 圆点进度指示 ── */
+    .dots {
       display: flex;
+      gap: 9px;
       align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      opacity: 0.22;
-      transition: opacity 200ms ease;
-      z-index: 20;
-      /* 扩大触摸热区 */
-      padding: 8px;
     }
 
-    .arrow:hover  { opacity: 0.65; }
-    .arrow:active { opacity: 1; }
-
-    .arrow svg {
-      width: 26px;
-      height: 26px;
-      stroke: #fff;
-      fill: none;
-      stroke-width: 1.6;
-      stroke-linecap: round;
-      stroke-linejoin: round;
+    .dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      border: 1.5px solid #C4A882;     /* 浅棕描边 */
+      background: transparent;
+      transition: background 300ms ease;
     }
 
-    /* 最后一张时隐藏箭头 */
-    .arrow.hidden {
-      opacity: 0;
-      pointer-events: none;
-    }
-
-    /* ── 底部进度区 ── */
-    .footer {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      padding: clamp(1.5rem, 4vw, 2.5rem) clamp(1.5rem, 6vw, 4rem);
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 0.6rem;
-      z-index: 20;
-      pointer-events: none;
-    }
-
-    /* 细线进度条 */
-    .progress-bar {
-      width: min(300px, 55vw);
-      height: 1px;
-      background: rgba(255, 255, 255, 0.1);
-      border-radius: 1px;
-      overflow: hidden;
-    }
-
-    .progress-fill {
-      height: 100%;
-      background: rgba(255, 255, 255, 0.45);
-      border-radius: 1px;
-      transition: width 400ms ease;
-    }
-
-    /* 进度数字 */
-    .progress-text {
-      font-size: 0.7rem;
-      color: rgba(255, 255, 255, 0.25);
-      letter-spacing: 0.15em;
+    .dot.active {
+      background: #C4A882;             /* 当前页实心 */
     }
   </style>
 </head>
 <body>
 
-<!-- 全屏舞台（点击 = 下一张） -->
-<div class="stage" id="stage"></div>
-
-<!-- 右侧翻页箭头 -->
-<div class="arrow" id="arrow" role="button" aria-label="下一张">
-  <svg viewBox="0 0 24 24" aria-hidden="true">
-    <polyline points="9 18 15 12 9 6"></polyline>
-  </svg>
-</div>
-
-<!-- 底部进度 -->
-<div class="footer">
-  <div class="progress-bar">
-    <div class="progress-fill" id="progressFill"></div>
-  </div>
-  <div class="progress-text" id="progressText"></div>
+<div class="scene">
+  <div class="card-wrap" id="cardWrap"></div>
+  <div class="dots"      id="dots"></div>
 </div>
 
 <script>
-  /* =====================================================================
-   * ★ 修改区域 ★  —— 只需改这里，上下不用动
+  /* =====================================================
+   * ★ 在这里修改文字内容 ★
    *
    *   text  主文字
-   *   sub   副文字（空字符串则不显示）
-   * ===================================================================== */
+   *   sub   副文字/署名（空字符串则不显示）
+   * ===================================================== */
   const slides = [
-    { text: "【第一句话】", sub: "" },
-    { text: "【第二句话】", sub: "" },
-    { text: "【第三句话】", sub: "" },
-    { text: "【第四句话】", sub: "" },
-    { text: "【第五句话】", sub: "" },
-    { text: "对不起。",     sub: "——来自某个很在乎你的人" },
+    { text: "你还好吗",               sub: "" },
+    { text: "我知道我上次说的话很过分", sub: "" },
+    { text: "我那时候没有考虑你的感受", sub: "" },
+    { text: "我想了很久，决定跟你说",   sub: "" },
+    { text: "对不起。",               sub: "——来自一个很在乎你的人" },
   ];
 
-  /* 后端地址：部署后替换成真实 URL，末尾不加斜杠 */
-  const API_BASE = "http://localhost:8000";
+  /* 后端地址（部署后已替换为真实地址） */
+  const API_BASE = "https://apology-backend-979k.onrender.com";
 
-  /* =====================================================================
-   * 以下为功能逻辑，通常无需修改
-   * ===================================================================== */
+  /* =====================================================
+   * 以下为逻辑代码，通常无需修改
+   * ===================================================== */
 
   let current   = 0;     // 当前卡片索引
-  let animating = false; // 动画锁，防止连续点击错位
+  let animating = false; // 动画锁，防止连续操作错位
 
-  const stage        = document.getElementById("stage");
-  const arrow        = document.getElementById("arrow");
-  const progressFill = document.getElementById("progressFill");
-  const progressText = document.getElementById("progressText");
+  const cardWrap = document.getElementById("cardWrap");
+  const dotsEl   = document.getElementById("dots");
 
   /* —— 建卡片 DOM —— */
   slides.forEach((slide, i) => {
     const card = document.createElement("div");
     card.className = "card" + (i === 0 ? " active" : "");
-    card.dataset.index = String(i);
 
     const textEl = document.createElement("p");
     textEl.className = "card-text";
@@ -225,21 +187,25 @@
       card.appendChild(subEl);
     }
 
-    stage.appendChild(card);
+    cardWrap.appendChild(card);
   });
 
-  const cards = Array.from(stage.querySelectorAll(".card"));
+  /* —— 建圆点 DOM —— */
+  slides.forEach((_, i) => {
+    const dot = document.createElement("div");
+    dot.className = "dot" + (i === 0 ? " active" : "");
+    dotsEl.appendChild(dot);
+  });
 
-  /* —— 更新进度条 + 箭头可见性 —— */
-  function updateProgress() {
-    const total = slides.length;
-    const num   = current + 1;
-    progressText.textContent = num + " / " + total;
-    progressFill.style.width = (num / total * 100) + "%";
-    arrow.classList.toggle("hidden", current === total - 1);
+  const cards = Array.from(cardWrap.querySelectorAll(".card"));
+  const dots  = Array.from(dotsEl.querySelectorAll(".dot"));
+
+  /* —— 更新圆点高亮 —— */
+  function updateDots() {
+    dots.forEach((d, i) => d.classList.toggle("active", i === current));
   }
 
-  /* —— 跳转到指定索引（前进/后退通用） —— */
+  /* —— 跳转到指定索引 —— */
   function goTo(index) {
     if (animating || index === current) return;
     if (index < 0 || index >= slides.length) return;
@@ -249,35 +215,31 @@
     const isForward = index > prev;
     current = index;
 
-    /* 旧卡片离场 */
-    cards[prev].classList.add("exit");
+    /* 旧卡片离场（方向感） */
     cards[prev].classList.remove("active");
+    cards[prev].classList.add(isForward ? "exit-up" : "exit-down");
 
-    /* 新卡片入场方向：前进从下方进入，后退从上方进入 */
-    const enterY = isForward ? "14px" : "-14px";
+    /* 新卡片：先设置入场初始状态，再激活 */
+    const enterY = isForward ? "12px" : "-12px";
     cards[current].style.cssText = `opacity:0; transform:translateY(${enterY}); transition:none;`;
-
-    /* 强制重排后开启 transition */
-    cards[current].offsetHeight; // 触发 reflow
+    cards[current].offsetHeight;    // 强制重排，确保 transition 生效
     cards[current].style.cssText = "";
     cards[current].classList.add("active");
 
-    updateProgress();
+    updateDots();
 
-    /* 动画结束后解锁，清理离场类 */
     setTimeout(() => {
-      cards[prev].classList.remove("exit");
+      cards[prev].classList.remove("exit-up", "exit-down");
       animating = false;
-    }, 440);
+    }, 470);
   }
 
-  /* —— 点击舞台 → 前进 —— */
-  stage.addEventListener("click", () => goTo(current + 1));
-
-  /* —— 点击箭头 → 前进（阻止冒泡避免触发两次） —— */
-  arrow.addEventListener("click", (e) => {
-    e.stopPropagation();
-    goTo(current + 1);
+  /* —— 桌面端：点击卡片左半 → 上一页，右半 → 下一页 —— */
+  cardWrap.addEventListener("click", (e) => {
+    const rect = cardWrap.getBoundingClientRect();
+    const mid  = rect.left + rect.width / 2;
+    if (e.clientX >= mid) goTo(current + 1);
+    else                   goTo(current - 1);
   });
 
   /* —— 键盘方向键 —— */
@@ -286,28 +248,25 @@
     if (e.key === "ArrowLeft"  || e.key === "ArrowUp")   goTo(current - 1);
   });
 
-  /* —— 触摸滑动（移动端） —— */
-  let touchStartX = 0;
+  /* —— 移动端：上滑 → 下一页，下滑 → 上一页，阈值 50px —— */
   let touchStartY = 0;
+  let touchStartX = 0;
   document.addEventListener("touchstart", (e) => {
-    touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
+    touchStartX = e.touches[0].clientX;
   }, { passive: true });
   document.addEventListener("touchend", (e) => {
-    const dx = e.changedTouches[0].clientX - touchStartX;
     const dy = e.changedTouches[0].clientY - touchStartY;
-    /* 水平滑动幅度 > 竖直幅度才触发翻页，避免误操作 */
-    if (Math.abs(dx) > 40 && Math.abs(dx) > Math.abs(dy)) {
-      if (dx < 0) goTo(current + 1); // 左滑 → 下一张
-      else         goTo(current - 1); // 右滑 → 上一张
+    const dx = e.changedTouches[0].clientX - touchStartX;
+    /* 竖向位移超过 50px，且大于横向位移，才触发翻页 */
+    if (Math.abs(dy) >= 50 && Math.abs(dy) > Math.abs(dx)) {
+      if (dy < 0) goTo(current + 1); // 上滑 → 下一页
+      else         goTo(current - 1); // 下滑 → 上一页
     }
   }, { passive: true });
 
-  /* —— 页面加载时记录一次访问（fire and forget，失败静默） —— */
+  /* —— 页面加载记录一次访问（fire and forget，失败静默） —— */
   fetch(API_BASE + "/api/visit", { method: "POST" }).catch(() => {});
-
-  /* —— 初始化进度显示 —— */
-  updateProgress();
 </script>
 </body>
 </html>
