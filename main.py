@@ -63,6 +63,42 @@ def detect_device(ua: str) -> str:
     return "desktop"
 
 
+def parse_device_info(ua: str) -> str:
+    """从 User-Agent 提取可读的设备型号 / 系统信息"""
+    if not ua:
+        return "Unknown"
+    # iPhone
+    m = re.search(r"iPhone OS ([\d_]+)", ua)
+    if m:
+        return f"iPhone · iOS {m.group(1).replace('_', '.')}"
+    # iPad
+    m = re.search(r"iPad.*?OS ([\d_]+)", ua)
+    if m:
+        return f"iPad · iOS {m.group(1).replace('_', '.')}"
+    # Android — 型号在 "Android X.X; 型号 Build" 或 "Android X.X; 型号)" 之间
+    m = re.search(r"Android ([\d.]+);\s*([^;)]+?)(?:\s+Build|[;)])", ua)
+    if m:
+        model = m.group(2).strip()
+        return f"Android {m.group(1)} · {model}" if model else f"Android {m.group(1)}"
+    if re.search(r"Android", ua, re.I):
+        m = re.search(r"Android ([\d.]+)", ua)
+        return f"Android {m.group(1)}" if m else "Android"
+    # Windows 桌面
+    if re.search(r"Windows", ua):
+        browser = ("Edge"    if re.search(r"Edg/",    ua) else
+                   "Chrome"  if "Chrome"  in ua else
+                   "Firefox" if "Firefox" in ua else "Browser")
+        return f"Windows · {browser}"
+    # Mac 桌面
+    if re.search(r"Macintosh", ua):
+        browser = ("Chrome" if "Chrome" in ua else
+                   "Safari" if "Safari" in ua else "Browser")
+        return f"Mac · {browser}"
+    if re.search(r"Linux", ua):
+        return "Linux · Browser"
+    return "Unknown"
+
+
 def get_ip(request: Request) -> str:
     fwd = request.headers.get("X-Forwarded-For")
     return fwd.split(",")[0].strip() if fwd else (request.client.host or "")
@@ -168,7 +204,7 @@ def admin_panel(key: str = "", db: Session = Depends(get_db)):
             for i in range(TOTAL_SLIDES)
         )
         rows += f"""<tr>
-          <td>{icon} {v.device_type or "-"}</td>
+          <td>{icon} {parse_device_info(v.user_agent or "")}</td>
           <td class="muted">{v.ip or "-"}</td>
           <td>{time_str}</td>
           <td class="center">{v.max_page + 1}&thinsp;/&thinsp;{TOTAL_SLIDES}</td>
