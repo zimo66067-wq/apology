@@ -3,3 +3,4 @@ uvicorn[standard]
 sqlalchemy
 python-dotenv
 aiofiles
+psycopg2-binary
